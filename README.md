@@ -16,6 +16,7 @@ FIXME
 * [ ] [Monster](https://www.monster.com/jobs)
 
 
+Record schema:
 company
 tagline
 snippet

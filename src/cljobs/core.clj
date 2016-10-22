@@ -9,31 +9,55 @@
 
 (def lang "clojure")
 
-; HELPERS
+; ----------------------------------
+; HELPERS --------------------------
+; ----------------------------------
 (defn get-text
+  "use enlive to retrieve text of provided enlive-doc at selector"
   [doc selector]
-  (string/trim (html/text (first (html/select doc selector)))))
+  (-> (html/select doc selector) first html/text string/trim))
 
-; src: http://stackoverflow.com/a/12503724/3481754
+(defn get-attr
+  "use enlive to retrieve given attr of provided enlive-doc at selector"
+  [doc selector attr]
+  (-> (html/select doc selector) first #(get-in % [:attrs (keyword attr)])))
+
 (defn parse-int [s]
-   (Integer. (re-find  #"\d+" s )))
+  "string->int
+   src: http://stackoverflow.com/a/12503724/3481754"
+   (Integer. (re-find  #"\d+" s)))
 
+(defn get-num-pgs
+  "return total number of webpages based off total records and current page chunk"
+  [records chunk]
+  (-> records (#(/ % chunk)) Math/ceil int))
+
+
+; doesnt handle 'yesterday'
 (defn format-date
  "converts string in format 'num unit ago' (ex 5 days ago) to org.joda.time.DateTime
   using clj-time lib"
  [time]
- (let [unit (second (re-find #"\d+\s(\w+)\sago" time))
-       unit-fn (resolve (symbol (str "t/" unit)))
+ (let [unit (->> time (re-find #"\d+\s([^s]+)s*\s*ago") second string/trim (str "s"))
+       unit-fn (->> unit (str "t/") symbol resolve)
        num (parse-int (re-find #"\d+" time))]
    (-> num unit-fn t/ago)))
 
-
+; ----------------------------------
+; SCRAPERS -------------------------
+; ----------------------------------
 (defn angel-scrape
   []
   (let [id-url "https://angel.co/job_listings/startup_ids"
-        id-res (json/decode ((client/get id-url {:query-params {"filter_data[keywords][]" lang}}) :body))
+        id-res (-> (client/get id-url {:query-params
+                                        {"filter_data[keywords][]" lang}}))
+                   :body
+                   json/decode)
         job-url "https://angel.co/job_listings/browse_startups_table"
-        listing-id-params (clojure.string/join "&" (map-indexed (fn [idx id] (str "listing_ids[" idx "][]=" (first id))) (id-res "listing_ids")))
+        listing-id-params (string/join "&" (map-indexed
+                                              (fn [idx id]
+                                                (str "listing_ids[" idx "][]=" (first id)))
+                                              (id-res "listing_ids")))
         job-url (str job-url "?" listing-id-params)
         jobs-doc ((client/get job-url {:query-params {:multi-param-array :array "startup_ids" (id-res "ids")}}) :body)
         job-listings (html/select (html/html-snippet jobs-doc) [:div.browse_startups_table_row])]
@@ -44,7 +68,7 @@
            :snippet (get-text listing [:.product :.description])
            :title (get-text listing [:div.collapsed-title])
            :location (get-text listing [:div.locations])
-           :link (get-in (first (html/select listing [:div.details :div.title :a])) [:attrs :href])
+           :link (get-attr listing [:div.details :div.title :a] :href)
            :compensation (get-text listing [:div.compensation])
            :date (format-date (get-text listing [:div.active.tag]))
            :source :angel-list})
@@ -59,22 +83,23 @@
                       :v 2}
         res ((client/get url {:query-params query-params}) :body)
         res (xml/parse (java.io.StringReader. res) :coalescing false)
-        num-jobs (->> res
-                      .content
-                      (filter #(= (.tag %) :totalresults))
-                       first
-                       .content
-                       first)
-        pages (int (Math/ceil (/ (parse-int num-jobs) 25)))]
+        num-jobs (-> res
+                     .content
+                     (filter #(= (.tag %) :totalresults))
+                     first
+                     .content
+                     first
+                     parse-int)
+        pages (get-num-pgs num-jobs 25)]
     (for [p (range pages)]
       (let [query-params (merge query-params {:start (* p 25)})
             res ((client/get url {:query-params query-params}) :body)
             res (xml/parse (java.io.StringReader. res))
-            job-listings (->> res
-                          .content
-                          (filter #(= (.tag %) :results))
-                           first
-                           .content)]
+            job-listings (-> res
+                             .content
+                             (filter #(= (.tag %) :results))
+                             first
+                             .content)]
             (map
               (fn [listing]
                 (let [res-map  (into {} (map #(hash-map (.tag %) (first (.content %))) (.content listing)))]
@@ -101,13 +126,11 @@
            :snippet nil
            :title (get-text listing [:.title :a])
            :location (get-text listing [:.location])
-           :link (str "https://jobs.github.com" (get-in (first (html/select listing [:.title :h4 :a])) [:attrs :href]) )
+           :link (str "https://jobs.github.com" (get-attr listing [:.title :h4 :a] :href))
            :compensation nil
            :date (get-text listing [:.when])
            :source :github})
         job-listings)))
-
-; sort=i&
 
 (defn so-scrape
   []
@@ -115,8 +138,7 @@
         query-params {:searchTerm lang}
         job-doc ((client/get url {:query-params query-params}) :body)
         num-jobs (re-find #"\d+" (get-text (html/html-snippet job-doc) [:span.description]))
-        pgs (int (Math/ceil (/ (parse-int num-jobs) 25)))
-        ]
+        pgs (get-num-pgs num-jobs 25)]
     (for [p (range pages)]
       (let [query-params (merge query-params {:pg p})
             job-doc ((client/get url {:query-params query-params}) :body)
@@ -129,7 +151,7 @@
                  :snippet (get-text listing [:p.text._muted])
                  :title (get-text listing [:a.job-link])
                  :location (get-text listing [:li.location])
-                 :link (str "http://stackoverflow.com" (first (re-find #".+\?" (get-in (first (html/select listing [:a.job-link])) [:attrs :href]))))
+                 :link (str "http://stackoverflow.com" (first (re-find #".+\?" (get-attr listing [:a.job-link] :href))))
                  :compensation nil
                  :date (format-date (get-text listing [:p.posted]))
                  :source :so}
