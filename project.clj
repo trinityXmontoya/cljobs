@@ -15,6 +15,7 @@
                  ;parser / formatter
                  [cheshire "5.6.3"]
                  [enlive "1.1.6"]
+                 [org.clojure/data.xml "0.0.8"]
                  ; env vars
                  [environ "1.1.0"]
                  ]
