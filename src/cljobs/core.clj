@@ -27,6 +27,7 @@
       (fn [listing]
           {:company (get-text listing [:a.startup-link])
            :tagline (get-text listing [:div.tagline])
+           :snippet nil
            :title (get-text listing [:div.collapsed-title])
            :location (get-text listing [:div.locations])
            :link (get-in (first (html/select listing [:div.details :div.title :a])) [:attrs :href])
@@ -71,8 +72,32 @@
                  :compensation nil
                  :source :indeed})) job-listings)))))
 
+(defn github-scrape
+  []
+  (let [url "https://jobs.github.com/positions"
+        query-params {:description lang}
+        job-doc ((client/get url {:query-params query-params}) :body)
+        job-listings (html/select (html/html-snippet job-doc) [:table.positionlist :tr])]
+    (map
+      (fn [listing]
+          {:company (get-text listing [:.source :a])
+           :tagline nil
+           :title (get-text listing [:.title :a])
+           :location (get-text listing [:.location])
+           :link (str "https://jobs.github.com" (get-in (first (html/select listing [:.title :h4 :a])) [:attrs :href]) )
+           :compensation nil
+           :date (get-text listing [:.when])
+           :source :github})
+        job-listings)))
 
-
+; (defn monster-scrape
+;   []
+;   (let [url "https://www.monster.com/jobs/search/"
+;         query-params {:q lang}
+;         res ((client/get url {:query-params query-params}) :body)
+;
+;
+;         ]))
 
 
       ; (def query-params {:query-params {:publisher "239314955390961", :q "clojure", :v 2}})
