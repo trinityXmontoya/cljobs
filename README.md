@@ -15,6 +15,18 @@ FIXME
 * [x] [Indeed](www.indeed.com/jobs)
 * [ ] [Monster](https://www.monster.com/jobs)
 
+
+company
+tagline
+snippet
+title
+location
+link
+compensation
+date
+source
+
+
 ## License
 
 Copyright © 2016 FIXME

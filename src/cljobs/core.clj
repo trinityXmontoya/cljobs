@@ -41,11 +41,12 @@
       (fn [listing]
           {:company (get-text listing [:a.startup-link])
            :tagline (get-text listing [:div.tagline])
-           :snippet nil
+           :snippet (get-text listing [:.product :.description])
            :title (get-text listing [:div.collapsed-title])
            :location (get-text listing [:div.locations])
            :link (get-in (first (html/select listing [:div.details :div.title :a])) [:attrs :href])
            :compensation (get-text listing [:div.compensation])
+           :date (format-date (get-text listing [:div.active.tag]))
            :source :angel-list})
         job-listings)))
 
@@ -84,6 +85,7 @@
                  :location (res-map :formattedLocation)
                  :link (res-map :url)
                  :compensation nil
+                 :date (format-date (res-map :formattedRelativeTime))
                  :source :indeed})) job-listings)))))
 
 (defn github-scrape
