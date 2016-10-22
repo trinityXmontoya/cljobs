@@ -3,16 +3,30 @@
             [cheshire.core :as json]
             [environ.core :refer [env]]
             [clojure.data.xml :as xml]
-            [net.cgrand.enlive-html :as html]))
+            [net.cgrand.enlive-html :as html]
+            [clojure.string :as string]
+            [clj-time.core :as t]))
 
 (def lang "clojure")
 
+; HELPERS
 (defn get-text
   [doc selector]
-  (html/text (first (html/select doc selector))))
+  (string/trim (html/text (first (html/select doc selector)))))
 
-  (defn parse-int [s]
-     (Integer. (re-find  #"\d+" s )))
+; src: http://stackoverflow.com/a/12503724/3481754
+(defn parse-int [s]
+   (Integer. (re-find  #"\d+" s )))
+
+(defn format-date
+ "converts string in format 'num unit ago' (ex 5 days ago) to org.joda.time.DateTime
+  using clj-time lib"
+ [time]
+ (let [unit (second (re-find #"\d+\s(\w+)\sago" time))
+       unit-fn (resolve (symbol (str "t/" unit)))
+       num (parse-int (re-find #"\d+" time))]
+   (-> num unit-fn t/ago)))
+
 
 (defn angel-scrape
   []
@@ -82,6 +96,7 @@
       (fn [listing]
           {:company (get-text listing [:.source :a])
            :tagline nil
+           :snippet nil
            :title (get-text listing [:.title :a])
            :location (get-text listing [:.location])
            :link (str "https://jobs.github.com" (get-in (first (html/select listing [:.title :h4 :a])) [:attrs :href]) )
@@ -89,6 +104,34 @@
            :date (get-text listing [:.when])
            :source :github})
         job-listings)))
+
+; sort=i&
+
+(defn so-scrape
+  []
+  (let [url "http://stackoverflow.com/jobs"
+        query-params {:searchTerm lang}
+        job-doc ((client/get url {:query-params query-params}) :body)
+        num-jobs (re-find #"\d+" (get-text (html/html-snippet job-doc) [:span.description]))
+        pgs (int (Math/ceil (/ (parse-int num-jobs) 25)))
+        ]
+    (for [p (range pages)]
+      (let [query-params (merge query-params {:pg p})
+            job-doc ((client/get url {:query-params query-params}) :body)
+            job-listings (html/select (html/html-snippet job-doc) [:.-job])]
+
+            (map
+              (fn [listing]
+                {:company (get-text listing [:li.employer])
+                 :tagline nil
+                 :snippet (get-text listing [:p.text._muted])
+                 :title (get-text listing [:a.job-link])
+                 :location (get-text listing [:li.location])
+                 :link (str "http://stackoverflow.com" (first (re-find #".+\?" (get-in (first (html/select listing [:a.job-link])) [:attrs :href]))))
+                 :compensation nil
+                 :date (format-date (get-text listing [:p.posted]))
+                 :source :so}
+                ) job-listings)))))
 
 ; (defn monster-scrape
 ;   []
@@ -135,35 +178,44 @@
 
 ; hacker news uses a small image and ident by setting the width of that image.
 ; all high-level posts are `<img src="s.gif" height="1" width="0">` with a width 0
-; (defn hacker-scrape
-;   []
-;   (let [id-url "https://hacker-news.firebaseio.com/v0/item/12627852.json"
-;         id-res (map str ((json/decode ((client/get id-url) :body)) "kids"))
-;         ; separate comments from high-level posts
-;         job-url "https://news.ycombinator.com/item?id=12627852"
-;         job-doc ((client/get url) :body)
-;         listings (html/select (html/html-snippet job-doc) [:tr.athing])
-;         job-listings (filter #(and (contains? (set id-res) (get-in % [:attrs :id]))
-;                                    (re-find (re-pattern (str "(?i)" lang)) (get-text % [:.comment]))) listings)]
-;     (map
-;       (fn [listing]
-;         (let [content (get-text content [:.comment])]
-;         {:company
-;          :tagline
-;          :title
-;          :location
-;          :link (str "https://news.ycombinator.com/item?id=" 12725222)
-;          :compensation
-;          :source :hackernews })) job-listings)))
+(defn hacker-scrape
+  []
+  (let [id-url "https://hacker-news.firebaseio.com/v0/item/12627852.json"
+        id-res (map str ((json/decode ((client/get id-url) :body)) "kids"))
+        ; separate comments from high-level posts
+        job-url "https://news.ycombinator.com/item?id=12627852"
+        job-doc ((client/get job-url) :body)
+        listings (html/select (html/html-snippet job-doc) [:tr.athing])
+        job-listings (filter #(and (contains? (set id-res) (get-in % [:attrs :id]))
+                                   (re-find (re-pattern (str "(?i)" lang)) (get-text % [:.comment]))) listings)]
+    (map
+      (fn [listing]
+        (let [content (get-text listing [:.comment])
+              name (let [opts (string/split content #"\||-")
+                         name (first opts)
+                         name-len (count (string/split name #"\s"))]
+                    (if (< name-len 3)
+                      name))]
+          (if name
+            {:company name
+             :tagline nil
+             :title nil
+             :location nil
+             :link (str "https://news.ycombinator.com/item?id=" (get-in listing [:attrs :id]))
+             :compensation nil
+             :date (format-date (get-text listing [:.age :a]))
+             :source :hackernews }))) job-listings)))
 
 ;
 ; (map
 ;   (fn [listing]
 ;     {:company
 ;      :tagline
+;      :snippet
 ;      :title
 ;      :location
 ;      :link
 ;      :compensation
+;       :date
 ;      :source }
 ;     ) job-listings)

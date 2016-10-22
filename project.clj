@@ -16,6 +16,7 @@
                  [cheshire "5.6.3"]
                  [enlive "1.1.6"]
                  [org.clojure/data.xml "0.0.8"]
+                 [clj-time "0.12.0"]
                  ; env vars
                  [environ "1.1.0"]
                  ]
