@@ -3,18 +3,20 @@
             [cheshire.core :as json]
             [environ.core :refer [env]]
             [clojure.data.xml :as xml]
-            [net.cgrand.enlive-html :as html]
             [clojure.string :as string]
+            [net.cgrand.enlive-html :as html]
             [clj-time.core :as t]
-            [postal.core :as postal]
-            [clojure.java.jdbc :as jdbc])
-  (:gen-class))
+            [clj-time.coerce :as c]
 
-(def lang "clojure")
+            [cljobs.pg :as pg]
+            [cljobs.mailer :as mailer])
+  (:gen-class))
 
 ; ----------------------------------
 ; HELPERS --------------------------
 ; ----------------------------------
+(def lang "clojure")
+
 (defn get-text
   "use enlive to retrieve text of provided enlive-doc at selector"
   [doc selector]
@@ -42,7 +44,7 @@
  [time]
  (when-not (= time "yesterday")
    (let [unit (->> time (re-find #"\d+[\s\S]([^s]+)s*\s*ago") second string/trim (#(str % "s")))
-         unit-fn (->> unit (str "t/") symbol resolve)
+         unit-fn (->> unit (str "clj-time.core/") symbol resolve)
          num (parse-int (re-find #"\d+" time))]
      (-> num unit-fn t/ago))))
 
@@ -73,7 +75,7 @@
            :location (get-text listing [:div.locations])
            :link (get-attr listing [:div.details :div.title :a] :href)
            :date (format-date (get-text listing [:div.active.tag]))
-           :source :angel-list})
+           :source "AngelList"})
         job-listings)))
 
 (defn indeed-scrape
@@ -109,7 +111,7 @@
                  :location (res-map :formattedLocation)
                  :link (res-map :url)
                  :date (format-date (res-map :formattedRelativeTime))
-                 :source :indeed})) job-listings)))))
+                 :source "Indeed"})) job-listings)))))
 
 (defn github-scrape
   []
@@ -124,7 +126,7 @@
            :location (get-text listing [:.location])
            :link (str "https://jobs.github.com" (get-attr listing [:.title :h4 :a] :href))
            :date (get-text listing [:.when])
-           :source :github})
+           :source "Github"})
         job-listings)))
 
 (defn so-scrape
@@ -148,7 +150,7 @@
                             (re-find #".+\?")
                             (str "http://stackoverflow.com"))
                  :date (format-date (get-text listing [:p.posted]))
-                 :source :so})
+                 :source "Stack Overflow"})
               job-listings)))))
 
 ; (defn monster-scrape
@@ -224,7 +226,15 @@
              :location nil
              :link (str "https://news.ycombinator.com/item?id=" (get-in listing [:attrs :id]))
              :date (format-date (get-text listing [:.age :a]))
-             :source :hackernews }))) job-listings)))
+             :source "Hackernews" }))) job-listings)))
+
+
+
+; (defn -main
+;  []
+;  (let [jobs (scrape)]
+;     (mailer/send-jobs-email jobs)
+;     (pg/write-count-to-db (flatten jobs))))
 
 (defn scrape
   []
@@ -232,81 +242,10 @@
           (compact-res (hacker-scrape))
           (compact-res (so-scrape))
           (compact-res (github-scrape))
-          (compact-res (indeed-scrape))]
+          (compact-res (indeed-scrape))
+          ]
           ; (angel-scrape)
           )
-
-; ----------------------------------
-; MAILER ---------------------------
-; ----------------------------------
-(def mailer-host-config
-  {:host "smtp.gmail.com"
-   :user (env :google-email)
-   :pass (env :google-pw)
-   :ssl true})
-
-(def mailer-msg-config
-  {:from (env :google-email)
-   :to (env :google-email)
-   :subject "Clojure Jobs"})
-
-(defn build-jobs-email
-  [jobs])
-
-; (defn job-template
-;   [jobs]
-;   [:div.job
-;     (map (fn [job]
-;           [:h4 ((first job) :source)
-;             [:ul
-;               (map (fn [listing]
-;                 [:li
-;                   (str (listing :title) " - " (listing :company) " - " (listing :location) )
-;                 ]
-;                 ) job)]]) jobs)])
-;
-; (defn job-temp
-;   [jobs]
-;   (map
-;     (fn [job]
-;       (str ((first job) :source))
-;       (map (fn [listing]
-;         (str (listing :title) " - " (listing :company) " - " (listing :location) " - " (listing :link))
-;         )job)
-;       )jobs))
-
-(defn send-jobs-email
-  [jobs]
-  (let [body (build-jobs-email jobs)
-        msg-config (assoc mailer-msg-config {:body {:type "text/html"
-                                                    :content body}})]
-    (postal/send-message mailer-host-config
-                         msg-config)))
-
-; ----------------------------------
-; POSTGRES -------------------------
-; ----------------------------------
-(def db-spec {:classname "org.postgresql.Driver"
-              :subprotocol "postgresql"
-              :subname "//localhost:5432/cljobs"})
-
-(def tablename :job_counts)
-
-; only create if doesnt exist
-(defn create-jobs-table
-  []
-  (jdbc/db-do-commands db-spec
-    (jdbc/create-table-ddl tablename
-      [[:id "serial" "PRIMARY KEY"]
-      [:total "int"]
-      [:date "timestamp"]])))
-
-(defn write-counts-to-db
-  [jobs]
-  (jdbc/insert! db-spec tablename
-    [:total :date]
-    [(count jobs) (c/to-sql-time (t/now))]))
-
 ;
 ; (map
 ;   (fn [listing]
