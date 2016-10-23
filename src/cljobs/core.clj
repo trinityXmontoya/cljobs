@@ -5,7 +5,10 @@
             [clojure.data.xml :as xml]
             [net.cgrand.enlive-html :as html]
             [clojure.string :as string]
-            [clj-time.core :as t]))
+            [clj-time.core :as t]
+            [postal.core :as postal]
+            [clojure.java.jdbc :as jdbc])
+  (:gen-class))
 
 (def lang "clojure")
 
@@ -20,7 +23,7 @@
 (defn get-attr
   "use enlive to retrieve given attr of provided enlive-doc at selector"
   [doc selector attr]
-  (-> (html/select doc selector) first #(get-in % [:attrs (keyword attr)])))
+  (-> (html/select doc selector) first (#(get-in % [:attrs (keyword attr)]))))
 
 (defn parse-int [s]
   "string->int
@@ -30,18 +33,18 @@
 (defn get-num-pgs
   "return total number of webpages based off total records and current page chunk"
   [records chunk]
-  (-> records (#(/ % chunk)) Math/ceil int))
+   (-> records parse-int (#(/ % chunk)) Math/ceil int))
 
-
-; doesnt handle 'yesterday'
+; doesnt handle 'yesterday' well
 (defn format-date
  "converts string in format 'num unit ago' (ex 5 days ago) to org.joda.time.DateTime
   using clj-time lib"
  [time]
- (let [unit (->> time (re-find #"\d+\s([^s]+)s*\s*ago") second string/trim (str "s"))
-       unit-fn (->> unit (str "t/") symbol resolve)
-       num (parse-int (re-find #"\d+" time))]
-   (-> num unit-fn t/ago)))
+ (when-not (= time "yesterday")
+   (let [unit (->> time (re-find #"\d+[\s\S]([^s]+)s*\s*ago") second string/trim (#(str % "s")))
+         unit-fn (->> unit (str "t/") symbol resolve)
+         num (parse-int (re-find #"\d+" time))]
+     (-> num unit-fn t/ago))))
 
 ; ----------------------------------
 ; SCRAPERS -------------------------
@@ -50,7 +53,7 @@
   []
   (let [id-url "https://angel.co/job_listings/startup_ids"
         id-res (-> (client/get id-url {:query-params
-                                        {"filter_data[keywords][]" lang}}))
+                                        {"filter_data[keywords][]" lang}})
                    :body
                    json/decode)
         job-url "https://angel.co/job_listings/browse_startups_table"
@@ -59,17 +62,16 @@
                                                 (str "listing_ids[" idx "][]=" (first id)))
                                               (id-res "listing_ids")))
         job-url (str job-url "?" listing-id-params)
-        jobs-doc ((client/get job-url {:query-params {:multi-param-array :array "startup_ids" (id-res "ids")}}) :body)
+        jobs-doc ((client/get job-url {:query-params
+                                        {:multi-param-array :array
+                                         :startup_ids (id-res "ids")}}) :body)
         job-listings (html/select (html/html-snippet jobs-doc) [:div.browse_startups_table_row])]
     (map
       (fn [listing]
           {:company (get-text listing [:a.startup-link])
-           :tagline (get-text listing [:div.tagline])
-           :snippet (get-text listing [:.product :.description])
            :title (get-text listing [:div.collapsed-title])
            :location (get-text listing [:div.locations])
            :link (get-attr listing [:div.details :div.title :a] :href)
-           :compensation (get-text listing [:div.compensation])
            :date (format-date (get-text listing [:div.active.tag]))
            :source :angel-list})
         job-listings)))
@@ -83,19 +85,18 @@
                       :v 2}
         res ((client/get url {:query-params query-params}) :body)
         res (xml/parse (java.io.StringReader. res) :coalescing false)
-        num-jobs (-> res
+        num-jobs (->> res
                      .content
                      (filter #(= (.tag %) :totalresults))
                      first
                      .content
-                     first
-                     parse-int)
+                     first)
         pages (get-num-pgs num-jobs 25)]
-    (for [p (range pages)]
+    (for [p (take 1 (range pages))]
       (let [query-params (merge query-params {:start (* p 25)})
             res ((client/get url {:query-params query-params}) :body)
             res (xml/parse (java.io.StringReader. res))
-            job-listings (-> res
+            job-listings (->> res
                              .content
                              (filter #(= (.tag %) :results))
                              first
@@ -104,12 +105,9 @@
               (fn [listing]
                 (let [res-map  (into {} (map #(hash-map (.tag %) (first (.content %))) (.content listing)))]
                 {:company (res-map :company)
-                 :tagline nil
-                 :snippet (res-map :snippet)
                  :title (res-map :jobtitle)
                  :location (res-map :formattedLocation)
                  :link (res-map :url)
-                 :compensation nil
                  :date (format-date (res-map :formattedRelativeTime))
                  :source :indeed})) job-listings)))))
 
@@ -122,12 +120,9 @@
     (map
       (fn [listing]
           {:company (get-text listing [:.source :a])
-           :tagline nil
-           :snippet nil
            :title (get-text listing [:.title :a])
            :location (get-text listing [:.location])
            :link (str "https://jobs.github.com" (get-attr listing [:.title :h4 :a] :href))
-           :compensation nil
            :date (get-text listing [:.when])
            :source :github})
         job-listings)))
@@ -138,24 +133,23 @@
         query-params {:searchTerm lang}
         job-doc ((client/get url {:query-params query-params}) :body)
         num-jobs (re-find #"\d+" (get-text (html/html-snippet job-doc) [:span.description]))
-        pgs (get-num-pgs num-jobs 25)]
-    (for [p (range pages)]
+        pages (get-num-pgs num-jobs 25)]
+    (for [p (take 1 (range pages))]
       (let [query-params (merge query-params {:pg p})
             job-doc ((client/get url {:query-params query-params}) :body)
             job-listings (html/select (html/html-snippet job-doc) [:.-job])]
-
             (map
               (fn [listing]
                 {:company (get-text listing [:li.employer])
-                 :tagline nil
-                 :snippet (get-text listing [:p.text._muted])
                  :title (get-text listing [:a.job-link])
                  :location (get-text listing [:li.location])
-                 :link (str "http://stackoverflow.com" (first (re-find #".+\?" (get-attr listing [:a.job-link] :href))))
-                 :compensation nil
+                 :link (->> listing
+                            (#(get-attr % [:a.job-link] :href))
+                            (re-find #".+\?")
+                            (str "http://stackoverflow.com"))
                  :date (format-date (get-text listing [:p.posted]))
-                 :source :so}
-                ) job-listings)))))
+                 :source :so})
+              job-listings)))))
 
 ; (defn monster-scrape
 ;   []
@@ -198,6 +192,10 @@
 ;
 ;         ))
 
+(defn compact-res
+  [listings]
+  (remove nil? (flatten listings)))
+
 ; (html/select listing #{[:a.startup-link html/text] [:div.tagline html/text] [:div.collapsed-title html/text] [:div.locations html/text] [:div.details :div.title :a]})
 
 ; hacker news uses a small image and ident by setting the width of that image.
@@ -222,24 +220,100 @@
                       name))]
           (if name
             {:company name
-             :tagline nil
              :title nil
              :location nil
              :link (str "https://news.ycombinator.com/item?id=" (get-in listing [:attrs :id]))
-             :compensation nil
              :date (format-date (get-text listing [:.age :a]))
              :source :hackernews }))) job-listings)))
+
+(defn scrape
+  []
+  [
+          (compact-res (hacker-scrape))
+          (compact-res (so-scrape))
+          (compact-res (github-scrape))
+          (compact-res (indeed-scrape))]
+          ; (angel-scrape)
+          )
+
+; ----------------------------------
+; MAILER ---------------------------
+; ----------------------------------
+(def mailer-host-config
+  {:host "smtp.gmail.com"
+   :user (env :google-email)
+   :pass (env :google-pw)
+   :ssl true})
+
+(def mailer-msg-config
+  {:from (env :google-email)
+   :to (env :google-email)
+   :subject "Clojure Jobs"})
+
+(defn build-jobs-email
+  [jobs])
+
+; (defn job-template
+;   [jobs]
+;   [:div.job
+;     (map (fn [job]
+;           [:h4 ((first job) :source)
+;             [:ul
+;               (map (fn [listing]
+;                 [:li
+;                   (str (listing :title) " - " (listing :company) " - " (listing :location) )
+;                 ]
+;                 ) job)]]) jobs)])
+;
+; (defn job-temp
+;   [jobs]
+;   (map
+;     (fn [job]
+;       (str ((first job) :source))
+;       (map (fn [listing]
+;         (str (listing :title) " - " (listing :company) " - " (listing :location) " - " (listing :link))
+;         )job)
+;       )jobs))
+
+(defn send-jobs-email
+  [jobs]
+  (let [body (build-jobs-email jobs)
+        msg-config (assoc mailer-msg-config {:body {:type "text/html"
+                                                    :content body}})]
+    (postal/send-message mailer-host-config
+                         msg-config)))
+
+; ----------------------------------
+; POSTGRES -------------------------
+; ----------------------------------
+(def db-spec {:classname "org.postgresql.Driver"
+              :subprotocol "postgresql"
+              :subname "//localhost:5432/cljobs"})
+
+(def tablename :job_counts)
+
+; only create if doesnt exist
+(defn create-jobs-table
+  []
+  (jdbc/db-do-commands db-spec
+    (jdbc/create-table-ddl tablename
+      [[:id "serial" "PRIMARY KEY"]
+      [:total "int"]
+      [:date "timestamp"]])))
+
+(defn write-counts-to-db
+  [jobs]
+  (jdbc/insert! db-spec tablename
+    [:total :date]
+    [(count jobs) (c/to-sql-time (t/now))]))
 
 ;
 ; (map
 ;   (fn [listing]
 ;     {:company
-;      :tagline
-;      :snippet
 ;      :title
 ;      :location
 ;      :link
-;      :compensation
 ;       :date
 ;      :source }
 ;     ) job-listings)

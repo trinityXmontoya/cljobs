@@ -16,14 +16,14 @@ FIXME
 * [ ] [Monster](https://www.monster.com/jobs)
 
 
+prereq;
+`create database cljobs;`
+
 Record schema:
 company
-tagline
-snippet
 title
 location
 link
-compensation
 date
 source
 
