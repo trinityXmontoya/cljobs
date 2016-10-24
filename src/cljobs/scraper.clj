@@ -70,44 +70,11 @@
         doc (get-body url query-params)
         num-jobs (get-number doc pg-selector)
         pages (get-num-pgs num-jobs chunk)]
-    (map handler-fn (take 1 (range pages)))))
+    (map handler-fn (range pages))))
 
 ; ----------------------------------
 ; SCRAPERS -------------------------
 ; ----------------------------------
-(defn indeed-scrape
-  []
-  (println "Scraping indeed...")
-  (let [{:keys [url query-params chunk]} (scrape-schemas :indeed)
-        res (get-body url query-params)
-        xml-doc (xml/parse (java.io.StringReader. res))
-        num-jobs (->> xml-doc
-                     .content
-                     (filter #(= (.tag %) :totalresults))
-                     first
-                     .content
-                     first)
-        pages (get-num-pgs num-jobs chunk)]
-    (for [p (take 1 (range pages))]
-      (let [query-params (merge query-params {:start (* p chunk)})
-            res (get-body url query-params)
-            xml-doc (xml/parse (java.io.StringReader. res))
-            job-listings (->> xml-doc
-                             .content
-                             (filter #(= (.tag %) :results))
-                             first
-                             .content)]
-            (map
-              (fn [listing]
-                (let [res-map  (into {} (map #(hash-map (.tag %) (first (.content %))) (.content listing)))]
-                  {:source "Indeed"
-                   :company (:company res-map)
-                   :title (:jobtitle res-map)
-                   :location (:formattedLocation res-map)
-                   :link (:url res-map)}))
-              job-listings)))))
-
-
 (defn so-scrape
   []
   (println "Scraping stackoverflow...")
@@ -148,6 +115,41 @@
                :location (listing "LocationText")
                :link (listing "JobViewUrl")})
             listings))))))
+
+(defn indeed-scrape
+  []
+  (println "Scraping indeed...")
+  (let [{:keys [url query-params chunk]} (scrape-schemas :indeed)
+        doc (get-body url query-params)
+        num-jobs (->> (java.io.StringReader. doc)
+                      xml/parse
+                      .content
+                      (filter #(= (.tag %) :totalresults))
+                      first
+                      .content
+                      first)
+        pages (get-num-pgs num-jobs chunk)]
+    (for [p (range pages)]
+      (let [query-params (merge query-params {:start (* p chunk)})
+            doc (get-body url query-params)
+            listings (->> (java.io.StringReader. doc)
+                          xml/parse
+                          .content
+                          (filter #(= (.tag %) :results))
+                          first
+                          .content)]
+            (map
+              (fn [listing]
+                (let [res-map (->> (.content listing)
+                                   (map #(hash-map (.tag %)
+                                                   (first (.content %))))
+                                   (into {}))]
+                  {:source "Indeed"
+                   :company (:company res-map)
+                   :title (:jobtitle res-map)
+                   :location (:formattedLocation res-map)
+                   :link (:url res-map)}))
+              listings)))))
 
 (defn master-scrape
   []

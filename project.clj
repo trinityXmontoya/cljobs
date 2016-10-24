@@ -11,14 +11,12 @@
                  [com.draines/postal "2.0.0"]
                  ;http
                  [clj-http "2.3.0"]
-                 [http-kit "2.2.0"]
                  ;parser / formatter
                  [cheshire "5.6.3"]
                  [enlive "1.1.6"]
                  [org.clojure/data.xml "0.0.8"]
                  [clj-time "0.12.0"]
                  ; env vars
-                 [environ "1.1.0"]
-                 ]
+                 [environ "1.1.0"]]
   :plugins [[lein-environ "1.1.0"]]
   :main cljobs.core)
