@@ -20,4 +20,5 @@
                  ; env vars
                  [environ "1.1.0"]
                  ]
-  :plugins [[lein-environ "1.1.0"]])
+  :plugins [[lein-environ "1.1.0"]]
+  :main cljobs.core)

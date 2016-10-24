@@ -5,19 +5,19 @@
 
 (def host-config
   {:host "smtp.gmail.com"
-   :user (env :google-email)
-   :pass (env :google-pw)
+   :user (:google-email env)
+   :pass (:google-pw env)
    :ssl true})
 
 (def msg-config
-  {:from (env :google-email)
-   :to (env :recipient-email)
+  {:from (:google-email env)
+   :to (:recipient-email env)
    :subject "Clojure Jobs"})
 
 (html/defsnippet listing-snippet "email-template.html"
   {[:h2] [[:div.post-body (html/nth-of-type 1)]]}
   [jobs]
-  [:h2] (html/content (str ((first jobs) :source) ":" (count jobs)))
+  [:h2] (html/content (str (:source (first jobs)) ": " (count jobs)))
   [:ul [:li html/first-of-type]] (html/clone-for [{:keys [company title location link]} jobs]
                                                  [:li :a] (html/content (str company " - " title " - " location))
                                                  [:li :a] (html/set-attr :href link)))
@@ -34,7 +34,7 @@
 (defn send-jobs-email
   [jobs]
   (let [body (build-jobs-email jobs)
-        msg-config (merge mailer-msg-config {:body [{:type "text/html"
-                                                     :content body}]})]
-    (postal/send-message host-config
-                         msg-config)))
+        msg-config (merge msg-config {:body [{:type "text/html"
+                                              :content body}]})]
+    (println "Sending jobs email to" (:recipient-email env))
+    (postal/send-message host-config msg-config)))

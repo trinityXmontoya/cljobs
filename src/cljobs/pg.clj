@@ -12,15 +12,17 @@
 (defn uniq-count
   [jobs]
   (println "Tallying unique jobs...")
-  (let [; dup-count (count (map first (filter #(< 1 (second %)) (frequencies (map #(select-keys % [:company :title]) jobs)))))
-        dupes (reduce + (remove (partial = 1) (map second (frequencies (map #(select-keys % [:company :title]) jobs)))))
+  (let [dupes (->> (map #(select-keys % [:company :title]) jobs)
+                   frequencies
+                   (map second)
+                   (remove #{1})
+                   (reduce +))
         total (count jobs)]
     (println "Total jobs: " total)
     (println "Duplicate jobs: " dupes)
     (- total dupes)))
 
-; only create if doesnt exist IF NOT EXISTS
-(defn create-jobs-table
+(defn create-job-counts-table
   []
   (println "Creating job_counts table...")
   (jdbc/db-do-commands db-spec
@@ -32,7 +34,9 @@
 
 (defn write-count-to-db
   [jobs]
-  (println "Writing job count to db...")
-  (jdbc/insert! db-spec tablename
-    [:total :date]
-    [(uniq-count jobs) (c/to-sql-time (t/now))]))
+  (let [total (uniq-count jobs)]
+    (println "Writing job count (" total ") to db...")
+    (jdbc/insert! db-spec tablename
+      [:total :date]
+      [total (c/to-sql-time (t/now))])
+    (println "Write to database complete.")))
