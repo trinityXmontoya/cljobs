@@ -1,36 +1,16 @@
 # cljobs
 
-A Clojure library designed to ... well, that part is up to you.
+Scrapes [Stack Overflow](stackoverflow.com/jobs) , [Indeed](www.indeed.com/jobs), and [Monster](https://www.monster.com/jobs) for Clojure jobs
 
-## Usage
+### Assumptions
+- Postgres is running on port 5432 and you've created a database 'cljobs':
 
-FIXME
+  `create database cljobs;`
+- following env vars
 
-
-* [x] [Stack Overflow](stackoverflow.com/jobs)
-* [x] [Indeed](www.indeed.com/jobs)
-* [x] [Monster](https://www.monster.com/jobs)
-
-
-prereq;
-`create database cljobs;`
-
-Record schema:
-company
-title
-location
-link
-date
-source
-
-
-## License
-
-Copyright © 2016 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
-
-
-; hacker news uses a small image and ident by setting the width of that image.
-; all high-level posts are `<img src="s.gif" height="1" width="0">` with a width 0
+```
+{:indeed-api-key INDEED-PUBLISHER-API-KEY
+ :google-email YOUR-GOOGLE-EMAIL
+ :google-pw YOUR-GOOGLE-PW
+ :recipient-email WHO-TO-SEND-JOBS-EMAIL-TO}
+```
