@@ -6,8 +6,8 @@
 
 (defn -main
  []
- (println "Beginning program...")
+ (println "Beginning program...")  ;; (prn ...)
  (pg/create-job-counts-table)
- (let [jobs (scraper/master-scrape)]
+ (let [jobs (scraper/master-scrape)]  
     (mailer/send-jobs-email jobs)
     (pg/write-count-to-db (flatten jobs))))
