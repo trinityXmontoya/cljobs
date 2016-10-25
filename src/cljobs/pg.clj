@@ -24,9 +24,9 @@
 
 (defn create-job-counts-table
   []
-  (println "Creating job_counts table...")
+  (println "Creating job_counts table (if it doesn't exist)...")
   (jdbc/db-do-commands db-spec
-    (jdbc/create-table-ddl tablename
+    (jdbc/create-table-ddl (str "IF NOT EXISTS " (name tablename))
       [[:id "serial" "PRIMARY KEY"]
       [:total "int"]
       [:date "timestamp"]]))
