@@ -1,6 +1,6 @@
 # cljobs
 
-Scrapes [Stack Overflow](stackoverflow.com/jobs) , [Indeed](www.indeed.com/jobs), and [Monster](https://www.monster.com/jobs) for Clojure jobs
+Scrapes [Stack Overflow](http://stackoverflow.com/jobs) , [Indeed](http://www.indeed.com/jobs), and [Monster](https://www.monster.com/jobs) for Clojure jobs
 
 ### Assumptions
 - Postgres is running on port 5432 and you've created a database 'cljobs':
