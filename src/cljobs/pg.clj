@@ -5,16 +5,18 @@
 
 (def db-spec {:classname "org.postgresql.Driver"
              :subprotocol "postgresql"
-             :subname "//localhost:5432/cljobs"})
+             :subname "//localhost:5432/cljobs"})  ;; Good to use env here too to adapt to the deployment 
+                                                   ;; ex. (or (env :database_url) "//localhost:5432/cljobs")
 
 (def tablename :job_counts)
 
 (defn uniq-count
   [jobs]
   (println "Tallying unique jobs...")
-  (let [dupes (->> (map #(select-keys % [:company :title]) jobs)
-                   frequencies
-                   (map second)
+  (let [dupes (->> (map #(select-keys % [:company :title]) jobs) ;; glad to see threading macro here, I used them often
+                   frequencies                                   ;; would be cleaner to write, so you know what your threading:
+                                                                 ;; (->> jobs
+                   (map second)                                  ;;   (map #(select-keys % [:company :title])) ...
                    (remove #{1})
                    (reduce +))
         total (count jobs)]
